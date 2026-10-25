@@ -1,0 +1,12 @@
+# --- Training (PC / Google Colab) ---
+tensorflow>=2.15,<2.20
+numpy>=1.24,<3
+matplotlib>=3.7
+Pillow>=10.0
+
+# Optional on PC: sanity-check images or run inference_pi.py --image locally
+opencv-python-headless>=4.8,<5
+
+# --- Raspberry Pi inference ---
+# Install on the Pi with: pip install -r requirements-pi.txt
+# (See requirements-pi.txt for tflite-runtime and picamera2.)

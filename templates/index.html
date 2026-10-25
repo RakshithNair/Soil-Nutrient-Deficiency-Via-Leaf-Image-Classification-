@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leaf Nutrient Classifier</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Leaf Nutrient Deficiency Detector</h1>
+
+      <div class="panel">
+        <div class="controls">
+          <label class="button upload-btn">
+            <input id="fileInput" type="file" accept="image/*" />
+            Upload leaf image
+          </label>
+
+          <button id="startCameraBtn" type="button">Use live camera</button>
+          <button id="captureBtn" type="button" class="secondary">Capture photo</button>
+        </div>
+
+        <div class="preview-box">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="canvas" width="128" height="128" style="display: none"></canvas>
+          <img id="previewImage" alt="Selected preview" />
+        </div>
+
+        <div id="status" class="status">Choose a leaf image or use the camera.</div>
+
+        <button id="predictBtn" class="primary">Check deficiency</button>
+      </div>
+
+      <div id="result" class="result hidden">
+        <h2>Prediction</h2>
+        <p><strong>Class:</strong> <span id="className">-</span></p>
+        <p><strong>Confidence:</strong> <span id="confidence">-</span>%</p>
+        <div id="topClasses" class="top-classes"></div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
