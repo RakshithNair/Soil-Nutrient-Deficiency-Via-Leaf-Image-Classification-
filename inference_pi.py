@@ -31,6 +31,8 @@ except ImportError:
         import tensorflow.lite as tflite  # type: ignore[attr-defined]
 
 DEFAULT_IMG_SIZE = (128, 128)
+PREVIEW_WINDOW = "Leaf classifier - position image, Esc to cancel"
+RESULT_WINDOW = "Leaf classifier - press any key to close"
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Dummy inferences before timing (stabilizes first-run latency)",
     )
+    parser.add_argument(
+        "--countdown",
+        type=int,
+        default=5,
+        help="Seconds to preview before each capture attempt",
+    )
     return parser.parse_args()
 
 
@@ -71,6 +79,26 @@ def load_labels(labels_path: Path) -> list[str]:
         for line in labels_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def is_valid_leaf_frame(frame: np.ndarray) -> bool:
+    """Reject blank images and images without enough visible leaf color/detail."""
+    if frame is None or frame.size == 0:
+        return False
+
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+    green_mask = (h >= 35) & (h <= 90) & (s >= 35) & (v >= 40)
+    if float(np.mean(green_mask)) < 0.08:
+        return False
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    if float(gray.std()) < 18.0:
+        return False
+
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blur, 50, 150)
+    return float(np.mean(edges > 0)) > 0.01
 
 
 def load_tflite_interpreter(model_path: Path) -> tflite.Interpreter:
@@ -101,22 +129,119 @@ def preprocess_bgr_frame(
     return batch
 
 
-def capture_from_picamera2() -> np.ndarray:
-    """Capture one still frame from the Pi Camera Module (picamera2)."""
+def load_face_detector() -> cv2.CascadeClassifier:
+    """Load OpenCV's frontal-face cascade from its packaged data directory."""
+    cascade_classifier = getattr(cv2, "CascadeClassifier", None)
+    if cascade_classifier is None:
+        raise RuntimeError(
+            "This OpenCV build does not include face detection. Install the "
+            "Raspberry Pi OS packages with: sudo apt install python3-opencv opencv-data"
+        )
+
+    cascade_name = "haarcascade_frontalface_default.xml"
+    candidate_paths = [
+        Path("/usr/share/opencv4/haarcascades") / cascade_name,
+        Path("/usr/share/opencv/haarcascades") / cascade_name,
+    ]
+    cv2_data = getattr(cv2, "data", None)
+    if cv2_data is not None:
+        cascade_dir = getattr(cv2_data, "haarcascades", None)
+        if cascade_dir:
+            candidate_paths.insert(0, Path(cascade_dir) / cascade_name)
+
+    for path in candidate_paths:
+        detector = cascade_classifier(str(path))
+        if not detector.empty():
+            return detector
+
+    raise FileNotFoundError(
+        "OpenCV face-detection data is missing. Install it with: "
+        "sudo apt install opencv-data"
+    )
+
+
+def contains_human_face(
+    frame: np.ndarray,
+    detector: cv2.CascadeClassifier,
+) -> bool:
+    """Detect a face in the central image area, avoiding people beside a phone."""
+    height, width = frame.shape[:2]
+    center = frame[height // 5 : height - height // 5, width // 5 : width - width // 5]
+    gray = cv2.cvtColor(center, cv2.COLOR_BGR2GRAY)
+    faces = detector.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(30, 30),
+    )
+    return len(faces) > 0
+
+
+def capture_from_picamera2(countdown_seconds: int) -> np.ndarray:
+    """Preview the Pi Camera and retry captures until a valid leaf image is shown."""
     from picamera2 import Picamera2
 
+    face_detector = load_face_detector()
     picam = Picamera2()
-    config = picam.create_still_configuration(main={"size": (640, 480)})
-    picam.configure(config)
-    picam.start()
-    time.sleep(0.5)  # allow auto-exposure to settle
-    frame = picam.capture_array()
-    picam.stop()
-    picam.close()
+    started = False
+    try:
+        config = picam.create_preview_configuration(
+            main={"size": (640, 480), "format": "BGR888"}
+        )
+        picam.configure(config)
+        picam.start()
+        started = True
+        time.sleep(1)
+        countdown_start = time.monotonic()
+        retry_message_until = 0.0
+        cv2.namedWindow(PREVIEW_WINDOW, cv2.WINDOW_NORMAL)
+        while True:
+            frame = picam.capture_array()
+            now = time.monotonic()
+            display = frame.copy()
 
-    if frame.ndim == 3 and frame.shape[2] == 3:
-        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    return frame
+            if now < retry_message_until:
+                message = "show a proper image"
+                color = (0, 0, 255)
+            else:
+                if retry_message_until:
+                    countdown_start = now
+                    retry_message_until = 0.0
+
+                elapsed = now - countdown_start
+                remaining = max(0, countdown_seconds - int(elapsed))
+                message = f"Capturing in {remaining} s - show a leaf photo"
+                color = (0, 255, 0)
+
+                if elapsed >= countdown_seconds:
+                    if not is_valid_leaf_frame(frame) or contains_human_face(
+                        frame, face_detector
+                    ):
+                        print("Invalid capture: show a proper image", file=sys.stderr)
+                        retry_message_until = now + 2
+                        message = "show a proper image"
+                        color = (0, 0, 255)
+                    else:
+                        return frame
+
+            cv2.putText(
+                display,
+                message,
+                (12, 36),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.imshow(PREVIEW_WINDOW, display)
+            if cv2.waitKey(1) & 0xFF == 27:
+                raise SystemExit("Capture cancelled by user")
+    finally:
+        if started:
+            picam.stop()
+        picam.close()
+        cv2.destroyAllWindows()
 
 
 def run_inference(
@@ -160,8 +285,11 @@ def main() -> None:
             sys.exit(1)
         print(f"Using image file: {args.image}")
     else:
-        print("Capturing from Pi Camera (picamera2)...")
-        frame = capture_from_picamera2()
+        if args.countdown < 1:
+            print("Error: --countdown must be at least 1 second", file=sys.stderr)
+            sys.exit(2)
+        print(f"Starting Pi Camera preview ({args.countdown}-second countdown)...")
+        frame = capture_from_picamera2(args.countdown)
 
     input_tensor = preprocess_bgr_frame(frame, img_size, input_details)
 
@@ -184,6 +312,11 @@ def main() -> None:
     for idx in top_k:
         name = labels[idx] if idx < len(labels) else str(idx)
         print(f"  {name}: {probs[idx] * 100:.2f}%")
+
+    if not args.image:
+        cv2.imshow(RESULT_WINDOW, frame)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

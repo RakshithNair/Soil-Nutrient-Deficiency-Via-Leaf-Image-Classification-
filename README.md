@@ -97,7 +97,7 @@ Picamera2 depends on the OS camera stack and should not be installed from PyPI.
 
 ```bash
 sudo apt update
-sudo apt install -y python3-picamera2 python3-opencv python3-numpy python3-venv rpicam-apps
+sudo apt install -y python3-picamera2 python3-opencv python3-numpy python3-venv opencv-data rpicam-apps
 ```
 
 Connect the camera ribbon cable to the Pi 3B+'s CSI connector, then verify the
@@ -121,16 +121,25 @@ source .venv/bin/activate
 python -m pip install -r requirements-pi.txt
 ```
 
-Run one capture and classify it:
+Run the camera application from the Raspberry Pi desktop (a graphical display
+is required). The live preview shows a 5-second countdown; press Esc to quit.
+If a capture is blank, lacks a leaf-like image, or contains a detected face in
+the central area, it displays `show a proper image` and retries the countdown.
+The face check is intended to reject human photos displayed in the central
+view; like any visual detector, it is not a guarantee for every angle,
+lighting condition, or very small face.
+
+Run capture and classification:
 
 ```bash
 python inference_pi.py --model-dir artifacts
 ```
 
 The script captures one frame with **Picamera2**, resizes it to the model's
-configured input size, runs `model.tflite`, and prints the predicted class,
-confidence, and inference time. To test the model without using the camera,
-pass a saved image with `--image path/to/leaf.jpg`.
+configured input size, runs `model.tflite`, prints the predicted class,
+confidence, and inference time, then leaves the captured image open until a
+key is pressed. Change the countdown with `--countdown 8`. To test the model
+without using the camera, pass a saved image with `--image path/to/leaf.jpg`.
 
 If `rpicam-hello` cannot find the camera, check that the ribbon cable is fully
 seated and correctly oriented at both ends, then reboot and try again. If pip
