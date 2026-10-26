@@ -88,20 +88,54 @@ Copy `model.tflite`, `labels.txt`, and `training_config.json` to the Pi (SCP, US
 
 ## 3. Run inference on Raspberry Pi 3B+
 
-On **Raspberry Pi OS (Bookworm)** with the camera enabled:
+These setup commands target **Raspberry Pi OS Bookworm 64-bit** (Python 3.11)
+with a CSI camera such as Camera Module v1. Raspberry Pi OS Trixie ships
+Python 3.13, which is not supported by the available TFLite runtime wheels.
+Install Bookworm 64-bit if your Pi is currently running Trixie. Install camera
+and computer-vision packages from Raspberry Pi OS;
+Picamera2 depends on the OS camera stack and should not be installed from PyPI.
 
 ```bash
-python3 -m venv .venv
+sudo apt update
+sudo apt install -y python3-picamera2 python3-opencv python3-numpy python3-venv rpicam-apps
+```
+
+Connect the camera ribbon cable to the Pi 3B+'s CSI connector, then verify the
+camera before running Python:
+
+```bash
+rpicam-hello --timeout 5000
+```
+
+Copy the trained `artifacts/` folder from the training computer to the project
+directory on the Pi. It must contain `model.tflite`, `labels.txt`, and
+`training_config.json`. Confirm Python 3.11, then create a virtual environment
+that can see the camera and OpenCV packages installed by apt. Install Google's
+LiteRT interpreter, which provides the same `Interpreter` API used by this
+project:
+
+```bash
+python3 --version
+python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
+python -m pip install -r requirements-pi.txt
+```
 
-pip install -r requirements-pi.txt
-# If tflite_runtime has no wheel for your Python version, use a matching wheel
-# from TensorFlow’s Pi builds, or: pip install tensorflow (heavier fallback)
+Run one capture and classify it:
 
+```bash
 python inference_pi.py --model-dir artifacts
 ```
 
-The script captures one frame with **picamera2**, resizes to 128×128, runs **model.tflite**, and prints the predicted class and confidence.
+The script captures one frame with **Picamera2**, resizes it to the model's
+configured input size, runs `model.tflite`, and prints the predicted class,
+confidence, and inference time. To test the model without using the camera,
+pass a saved image with `--image path/to/leaf.jpg`.
+
+If `rpicam-hello` cannot find the camera, check that the ribbon cable is fully
+seated and correctly oriented at both ends, then reboot and try again. If pip
+cannot install LiteRT, confirm the Pi is running 64-bit Bookworm and the
+virtual environment uses Python 3.11 (`python --version`).
 
 ### PC webcam (USB camera)
 

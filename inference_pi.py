@@ -21,11 +21,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-# Prefer tflite_runtime on Pi (lightweight). Full TensorFlow works as fallback on PC.
+# Prefer LiteRT on Pi, with legacy TFLite Runtime and full TensorFlow fallbacks.
 try:
-    import tflite_runtime.interpreter as tflite
+    import ai_edge_litert.interpreter as tflite
 except ImportError:
-    import tensorflow.lite as tflite  # type: ignore[attr-defined]
+    try:
+        import tflite_runtime.interpreter as tflite
+    except ImportError:
+        import tensorflow.lite as tflite  # type: ignore[attr-defined]
 
 DEFAULT_IMG_SIZE = (128, 128)
 
