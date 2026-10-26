@@ -1,4 +1,5 @@
 data/
+feedback_images/
 artifacts/
 .venv/
 __pycache__/

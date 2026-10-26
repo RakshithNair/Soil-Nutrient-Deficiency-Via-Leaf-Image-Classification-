@@ -136,10 +136,21 @@ python inference_pi.py --model-dir artifacts
 ```
 
 The script captures one frame with **Picamera2**, resizes it to the model's
-configured input size, runs `model.tflite`, prints the predicted class,
-confidence, and inference time, then leaves the captured image open until a
-key is pressed. Change the countdown with `--countdown 8`. To test the model
-without using the camera, pass a saved image with `--image path/to/leaf.jpg`.
+configured input size, runs `model.tflite`, and prints the predicted class,
+confidence, and inference time. After closing the result window, choose the
+image's **true** class in the terminal to save it under `feedback_images/<class>/`,
+or choose `0` to discard it. These saved examples do not change the model by
+themselves. Do not accept the model's prediction without checking the leaf;
+incorrect labels can make a retrained model worse.
+
+To retrain later, copy correctly labeled images from the Pi's
+`feedback_images/<class>/` folders into the matching class folders in `data/`
+on the training computer, then run the training command in section 2. Evaluate
+the newly trained model before replacing the Pi's current artifacts. The Pi
+does not train itself during capture. Change the countdown with
+`--countdown 8` or the save location with `--feedback-dir my_feedback`.
+To test the model without using the camera, pass a saved image with
+`--image path/to/leaf.jpg`.
 
 If `rpicam-hello` cannot find the camera, check that the ribbon cable is fully
 seated and correctly oriented at both ends, then reboot and try again. If pip

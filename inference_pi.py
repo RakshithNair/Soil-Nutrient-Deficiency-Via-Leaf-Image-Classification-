@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Seconds to preview before each capture attempt",
     )
+    parser.add_argument(
+        "--feedback-dir",
+        type=Path,
+        default=Path("feedback_images"),
+        help="Folder for captured images labeled with the confirmed class",
+    )
     return parser.parse_args()
 
 
@@ -261,6 +267,46 @@ def run_inference(
     return class_id, confidence, probs
 
 
+def save_confirmed_feedback(
+    frame: np.ndarray,
+    labels: list[str],
+    feedback_dir: Path,
+) -> Path | None:
+    """Ask for the true class and save the frame into that class's folder."""
+    print("\nWas the prediction correct? Select the image's true class to save it:")
+    for index, label in enumerate(labels, start=1):
+        print(f"  {index}: {label}")
+    print("  0: discard this image")
+
+    while True:
+        choice = input("True class number (0 to discard): ").strip()
+        if choice == "0":
+            print("Image discarded; no feedback image saved.")
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(labels):
+            label = labels[int(choice) - 1]
+            break
+        print(f"Enter a number from 0 to {len(labels)}.")
+
+    if (
+        not label
+        or label in {".", ".."}
+        or Path(label).name != label
+        or "/" in label
+        or "\\" in label
+    ):
+        raise ValueError(f"Class label cannot be used as a folder name: {label!r}")
+
+    class_dir = feedback_dir / label
+    class_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    image_path = class_dir / f"{timestamp}_{time.time_ns() % 1_000_000_000:09d}.jpg"
+    if not cv2.imwrite(str(image_path), frame):
+        raise OSError(f"Could not save feedback image: {image_path}")
+    print(f"Saved confirmed {label} image: {image_path}")
+    return image_path
+
+
 def main() -> None:
     args = parse_args()
     model_path = args.model_dir / "model.tflite"
@@ -317,6 +363,7 @@ def main() -> None:
         cv2.imshow(RESULT_WINDOW, frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+        save_confirmed_feedback(frame, labels, args.feedback_dir)
 
 
 if __name__ == "__main__":
